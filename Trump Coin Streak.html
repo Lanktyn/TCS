@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trump Coin Streak</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;height:100%;overflow:hidden;background:#aedcf7;font-family:"Trebuchet MS",system-ui,sans-serif;color:#0d2b45;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hud{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);display:flex;justify-content:center;gap:14px;padding:14px;pointer-events:none}
+.box{background:rgba(255,255,255,.65);border-radius:16px;padding:8px 20px;text-align:center;min-width:96px;box-shadow:0 4px 14px rgba(13,43,69,.15)}
+.box small{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.7}
+.box b{font-size:34px;line-height:1.1}
+.bottom{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom,0px);text-align:center;padding:18px;pointer-events:none}
+#msg{font-size:22px;font-weight:700;min-height:30px;margin-bottom:12px}
+button{pointer-events:auto;font:inherit;font-weight:800;font-size:20px;padding:14px 38px;border:0;border-radius:40px;background:#0d2b45;color:#fff;box-shadow:0 6px 0 #05172a;cursor:pointer}
+button:active{transform:translateY(4px);box-shadow:0 2px 0 #05172a}
+button:disabled{opacity:.5}
+#mute{position:fixed;right:14px;top:calc(env(safe-area-inset-top,0px) + 14px);pointer-events:auto;padding:8px 12px;font-size:18px;box-shadow:none;background:rgba(255,255,255,.7);color:#0d2b45;border-radius:12px}
+#prof{position:fixed;left:14px;top:calc(env(safe-area-inset-top,0px) + 14px);pointer-events:auto;padding:8px 14px;font-size:16px;box-shadow:none;background:rgba(255,255,255,.7);color:#0d2b45;border-radius:12px}
+#modal{position:fixed;inset:0;background:rgba(13,43,69,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+#modal.open{display:flex}
+.card{background:#f4fbff;border-radius:22px;padding:22px;width:min(380px,100%);max-height:90%;overflow:auto;box-shadow:0 12px 40px rgba(13,43,69,.35)}
+.card h2{margin:0 0 4px;font-size:22px}
+.avatar{width:64px;height:64px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff2a8,#f5c518 50%,#b8860b);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#7a5606;margin:0 auto 10px;box-shadow:0 4px 10px rgba(13,43,69,.25)}
+#pname{width:100%;box-sizing:border-box;font:inherit;font-size:20px;font-weight:800;text-align:center;border:2px solid #b9dcf2;border-radius:12px;padding:6px;background:#fff;color:#0d2b45;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#fff;border-radius:14px;padding:10px;text-align:center}
+.stat small{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.65}
+.stat b{font-size:24px}
+.row{display:flex;gap:10px;margin-top:14px;justify-content:center}
+.row button{font-size:15px;padding:10px 22px;box-shadow:0 4px 0 #05172a}
+#reset{background:#b3261e;box-shadow:0 4px 0 #6e1511}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="box"><small>Streak</small><b id="streak">0</b></div>
+  <div class="box"><small>Best</small><b id="best">0</b></div>
+</div>
+<button id="mute" aria-label="Toggle sound">🔊</button>
+<button id="prof">👤 Profile</button>
+<div id="modal"><div class="card">
+  <div class="avatar" id="avatar">P</div>
+  <input id="pname" maxlength="16" placeholder="Your name" aria-label="Player name">
+  <div class="grid" id="grid"></div>
+  <div class="row"><button id="close">Close</button><button id="reset">Reset stats</button></div>
+</div></div>
+<div class="bottom"><div id="msg">Tap the coin to flip! Land Trump to build a streak.</div><button id="flip">FLIP</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---------- state ----------
+let streak=0,best=0,flipping=false,muted=false;
+try{best=parseInt(localStorage.getItem('trumpCoinBest')||'0',10)||0}catch(e){}
+const $=id=>document.getElementById(id);
+$('best').textContent=best;
+
+// ---------- profile ----------
+const blank=()=>({name:'Player',flips:0,heads:0,tails:0,ms:0,sessions:0,since:Date.now(),games:0});
+let P=blank();
+try{const s=JSON.parse(localStorage.getItem('trumpCoinProfile')||'null');if(s)P=Object.assign(blank(),s)}catch(e){}
+P.sessions++;
+function saveP(){try{localStorage.setItem('trumpCoinProfile',JSON.stringify(P))}catch(e){}}
+function fmtTime(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;return h?h+'h '+m+'m':m?m+'m '+r+'s':r+'s'}
+function renderP(){
+  const rate=P.flips?Math.round(P.heads/P.flips*100)+'%':'—';
+  const avg=P.games?(P.heads/P.games).toFixed(1):'—';
+  const items=[['Total flips',P.flips],['Time played',fmtTime(P.ms)],['Trump landings',P.heads],['$1 landings',P.tails],['Trump rate',rate],['Best streak',best],['Avg streak',avg],['Sessions',P.sessions]];
+  $('grid').innerHTML=items.map(i=>'<div class="stat"><small>'+i[0]+'</small><b>'+i[1]+'</b></div>').join('');
+  $('pname').value=P.name;$('avatar').textContent=(P.name||'P').trim().charAt(0).toUpperCase()||'P';
+}
+function recordFlip(heads){P.flips++;if(heads)P.heads++;else{P.tails++;P.games++}saveP()}
+setInterval(()=>{if(!document.hidden){P.ms+=1000;if($('modal').classList.contains('open'))renderP();if(P.ms%5000===0)saveP()}},1000);
+addEventListener('pagehide',saveP);
+$('prof').onclick=()=>{renderP();$('modal').classList.add('open')};
+$('close').onclick=()=>$('modal').classList.remove('open');
+$('modal').addEventListener('pointerdown',e=>{if(e.target.id==='modal')$('modal').classList.remove('open')});
+$('pname').oninput=e=>{P.name=e.target.value.slice(0,16);$('avatar').textContent=(P.name||'P').trim().charAt(0).toUpperCase()||'P';saveP()};
+$('reset').onclick=()=>{if(!confirm('Reset all stats and best score?'))return;P=blank();P.sessions=1;best=0;streak=0;$('best').textContent=0;$('streak').textContent=0;try{localStorage.removeItem('trumpCoinBest')}catch(e){}saveP();renderP()};
+
+// ---------- audio ----------
+let ac;
+function audio(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(ac&&ac.state==='suspended')ac.resume();return ac}
+function tone(f,d,type,vol,when,slide){const a=audio();if(!a||muted)return;const t=a.currentTime+(when||0);const o=a.createOscillator(),g=a.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,t);if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+d);g.gain.setValueAtTime(vol||.2,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(a.destination);o.start(t);o.stop(t+d)}
+const sfx={
+  flip(){tone(1800,.12,'triangle',.25,0,3200);tone(2600,.5,'sine',.08,.02,2200);for(let i=0;i<6;i++)tone(2200+i*150,.05,'square',.04,.15+i*.18)},
+  land(){tone(3200,.35,'sine',.2,0,3000);tone(4800,.25,'sine',.1,0,4700);tone(900,.08,'triangle',.2)},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,.25,'triangle',.22,i*.09))},
+  lose(){tone(300,.4,'sawtooth',.18,0,110);tone(220,.5,'square',.1,.1,80)},
+  record(){[784,988,1175,1568].forEach((f,i)=>tone(f,.3,'sine',.22,i*.1))}
+};
+$('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊'};
+
+// ---------- textures ----------
+function goldBase(ctx,S){
+  const g=ctx.createRadialGradient(S*.38,S*.32,S*.05,S/2,S/2,S*.7);
+  g.addColorStop(0,'#fff2a8');g.addColorStop(.45,'#f5c518');g.addColorStop(1,'#b8860b');
+  ctx.fillStyle=g;ctx.fillRect(0,0,S,S);
+  ctx.lineWidth=S*.03;ctx.strokeStyle='#8a6208';ctx.beginPath();ctx.arc(S/2,S/2,S*.46,0,7);ctx.stroke();
+  ctx.lineWidth=S*.012;ctx.strokeStyle='#fff0a0';ctx.beginPath();ctx.arc(S/2,S/2,S*.42,0,7);ctx.stroke();
+}
+function faceTex(kind){
+  const S=512,c=document.createElement('canvas');c.width=c.height=S;const x=c.getContext('2d');
+  goldBase(x,S);
+  x.textAlign='center';x.fillStyle='#7a5606';x.strokeStyle='#fff3b0';x.lineWidth=3;
+  if(kind==='head'){
+    // stylized bust silhouette
+    x.fillStyle='#8a6208';
+    x.beginPath();x.ellipse(S/2,S*.4,S*.12,S*.15,0,0,7);x.fill();
+    x.beginPath();x.moveTo(S*.22,S*.72);x.quadraticCurveTo(S*.28,S*.55,S/2,S*.55);x.quadraticCurveTo(S*.72,S*.55,S*.78,S*.72);x.closePath();x.fill();
+    x.fillStyle='#b8860b';x.beginPath();x.ellipse(S/2,S*.29,S*.13,S*.06,0,0,7);x.fill();
+    x.fillStyle='#7a5606';x.font='bold 64px Georgia,serif';
+    x.strokeText('DONALD TRUMP',S/2,S*.86);x.font='bold 56px Georgia,serif';x.fillText('DONALD TRUMP',S/2,S*.86);
+    x.font='bold 34px Georgia,serif';x.fillText('★ HEADS ★',S/2,S*.18);
+  }else{
+    x.fillStyle='#7a5606';x.font='bold 250px Georgia,serif';x.fillText('$1',S/2,S*.6);
+    x.font='bold 40px Georgia,serif';x.fillText('ONE DOLLAR',S/2,S*.78);x.fillText('★ TAILS ★',S/2,S*.2);
+  }
+  const t=new THREE.CanvasTexture(c);t.anisotropy=8;return t;
+}
+function sideTex(){
+  const c=document.createElement('canvas');c.width=256;c.height=16;const x=c.getContext('2d');
+  x.fillStyle='#d9a514';x.fillRect(0,0,256,16);x.fillStyle='#8a6208';
+  for(let i=0;i<256;i+=4)x.fillRect(i,0,2,16);
+  const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;return t;
+}
+
+// ---------- scene ----------
+const canvas=$('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(45,1,.1,100);
+camera.position.set(0,5.2,7.2);camera.lookAt(0,1.4,0);
+scene.add(new THREE.AmbientLight(0xffffff,.75));
+const sun=new THREE.DirectionalLight(0xffffff,.9);sun.position.set(3,8,5);scene.add(sun);
+const rim=new THREE.PointLight(0xfff0b0,.7,30);rim.position.set(-4,4,3);scene.add(rim);
+
+const mats=[
+  new THREE.MeshPhongMaterial({map:sideTex(),color:0xffd54a,specular:0xffffaa,shininess:90}),
+  new THREE.MeshPhongMaterial({map:faceTex('head'),specular:0xffffcc,shininess:80}),
+  new THREE.MeshPhongMaterial({map:faceTex('tail'),specular:0xffffcc,shininess:80})
+];
+mats[2].map.center.set(.5,.5);mats[2].map.rotation=Math.PI;mats[2].map.repeat.set(1,-1);mats[2].map.offset.set(0,1);
+const coin=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,.2,64),mats);
+coin.position.y=.1;scene.add(coin);
+const shadow=new THREE.Mesh(new THREE.CircleGeometry(1.5,32),new THREE.MeshBasicMaterial({color:0x2a6a9a,transparent:true,opacity:.3}));
+shadow.rotation.x=-Math.PI/2;shadow.position.y=.01;scene.add(shadow);
+const floor=new THREE.Mesh(new THREE.CircleGeometry(4,48),new THREE.MeshBasicMaterial({color:0xd4eefc,transparent:true,opacity:.7}));
+floor.rotation.x=-Math.PI/2;floor.position.y=0;scene.add(floor);
+shadow.position.y=.02;
+
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;
+  camera.position.set(0,5.2,Math.max(7.2,7.2*(1.1/ (w/h))));camera.lookAt(0,1.4,0);camera.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+// ---------- flip ----------
+let facingHeads=true,rotX=0;
+function flip(){
+  if(flipping)return;audio();flipping=true;$('flip').disabled=true;$('msg').textContent='Flipping…';
+  const heads=Math.random()<.5;
+  const start=rotX,spins=5+Math.floor(Math.random()*3);
+  const need=(heads!==facingHeads)?Math.PI:0;
+  const end=start+spins*2*Math.PI+need;
+  const dur=1700,H=3.6,t0=performance.now(),tilt=(Math.random()-.5)*.5;
+  sfx.flip();
+  (function step(now){
+    const t=Math.min((now-t0)/dur,1);
+    const y=4*H*t*(1-t);
+    rotX=start+(end-start)*(1-Math.pow(1-t,1.6));
+    coin.position.y=.1+y;coin.rotation.x=rotX;coin.rotation.z=tilt*Math.sin(t*Math.PI);
+    const s=1-Math.min(y/6,.5);shadow.scale.set(s,s,s);shadow.material.opacity=.3*s;
+    if(t<1)requestAnimationFrame(step);else{rotX=end;coin.rotation.z=0;facingHeads=heads;land(heads)}
+  })(t0);
+}
+function land(heads){
+  sfx.land();recordFlip(heads);
+  if(heads){
+    streak++;$('streak').textContent=streak;
+    if(streak>best){best=streak;$('best').textContent=best;try{localStorage.setItem('trumpCoinBest',best)}catch(e){}
+      $('msg').textContent='🔥 Trump! New best: '+best;setTimeout(sfx.record,250)}
+    else{$('msg').textContent='Trump! Streak: '+streak;setTimeout(sfx.win,200)}
+  }else{
+    $('msg').textContent=streak>0?'$1… streak over at '+streak+'. Try again!':'$1! Tap to flip again.';
+    streak=0;$('streak').textContent=0;setTimeout(sfx.lose,200);
+  }
+  flipping=false;$('flip').disabled=false;
+}
+$('flip').addEventListener('click',flip);
+// tap the coin
+const ray=new THREE.Raycaster();
+canvas.addEventListener('pointerdown',e=>{
+  const m=new THREE.Vector2(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(m,camera);if(ray.intersectObject(coin).length)flip();
+});
+
+// idle render loop
+(function loop(){requestAnimationFrame(loop);
+  if(!flipping)coin.position.y=.1+Math.sin(performance.now()/600)*.04;
+  renderer.render(scene,camera)})();
+</script>
+</body>
+</html>
